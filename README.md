@@ -46,6 +46,8 @@ Sem o SQL, a loja mostra produtos de exemplo, mas **não consegue gravar pedidos
 
 ## Publicar com HTTPS
 
+Uma versão HTTPS já está em [`movva-store-caio.smokygem14.chatgpt.site`](https://movva-store-caio.smokygem14.chatgpt.site). O link foi preparado para acesso público e pode ser compartilhado no Teams após o banco estar configurado.
+
 1. Execute `npm run build`.
 2. Publique a pasta `dist/` em uma hospedagem estática com HTTPS, como Netlify ou Vercel.
 3. Configure a hospedagem para entregar `index.html` nas rotas internas do React Router. Em Netlify, o arquivo `public/_redirects` já prepara isso.
@@ -53,7 +55,7 @@ Sem o SQL, a loja mostra produtos de exemplo, mas **não consegue gravar pedidos
 5. Adicione o domínio HTTPS publicado às URLs permitidas em Supabase Authentication.
 6. Teste cadastro, confirmação de e-mail, login, CEP, pedido e histórico no domínio publicado antes de entregar o link no Teams.
 
-O endereço HTTPS definitivo depende da conta de hospedagem e ainda precisa ser gerado. O arquivo `public/robots.txt`, títulos por página, HTML semântico, descrições e imagens locais apoiam o SEO. Como a loja é uma SPA, páginas de produto seriam indexadas com mais robustez se fossem pré-renderizadas ou migradas para renderização no servidor em uma versão de produção.
+O arquivo `public/robots.txt`, títulos por página, HTML semântico, descrições e imagens locais apoiam o SEO. Como a loja é uma SPA, páginas de produto seriam indexadas com mais robustez se fossem pré-renderizadas ou migradas para renderização no servidor em uma versão de produção.
 
 ### Plano de SEM para apresentação
 

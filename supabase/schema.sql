@@ -22,17 +22,20 @@ create or replace function public.valid_cpf(value text)
 returns boolean language plpgsql immutable set search_path = public as $$
 declare
   clean text := regexp_replace(coalesce(value, ''), '[^0-9]', '', 'g');
-  position integer;
-  digit integer;
+  v_position integer;
+  v_digit integer;
+  v_check integer;
   total integer;
 begin
   if length(clean) <> 11 or clean = repeat(left(clean, 1), 11) then return false; end if;
-  for position in 9..10 loop
+  for v_position in 9..10 loop
     total := 0;
-    for digit in 1..position loop
-      total := total + substring(clean from digit for 1)::integer * (position + 2 - digit);
+    for v_digit in 1..v_position loop
+      total := total + substr(clean, v_digit, 1)::integer * (v_position + 2 - v_digit);
     end loop;
-    if substring(clean from position + 1 for 1)::integer <> case when (total * 10) % 11 = 10 then 0 else (total * 10) % 11 end then
+    v_check := (total * 10) % 11;
+    if v_check = 10 then v_check := 0; end if;
+    if substr(clean, v_position + 1, 1)::integer <> v_check then
       return false;
     end if;
   end loop;
