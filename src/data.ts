@@ -13,6 +13,9 @@ export type Product = {
   description: string
   sizes: string[]
   featured: boolean
+  active?: boolean
+  sort_order?: number
+  stock?: number
 }
 
 export const demoProducts: Product[] = [

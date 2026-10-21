@@ -16,6 +16,8 @@ type ShopContextType = {
   customer: Customer | null
   authLoading: boolean
   setupNeeded: boolean
+  isAdmin: boolean
+  adminLoading: boolean
   orders: Order[]
   cartCount: number
   addItem: (productId: string, size: string, quantity?: number) => void
@@ -26,6 +28,7 @@ type ShopContextType = {
   saveProfile: (profile: Pick<Customer, 'name' | 'cpf' | 'phone' | 'default_address'>) => Promise<void>
   placeOrder: (address: Address, payment: string) => Promise<string>
   refreshOrders: () => Promise<void>
+  refreshProducts: () => Promise<void>
 }
 
 const ShopContext = createContext<ShopContextType | null>(null)
@@ -37,31 +40,41 @@ export function ShopProvider({ children }: { children: ReactNode }) {
   const [orders, setOrders] = useState<Order[]>([])
   const [authLoading, setAuthLoading] = useState(!isDemo)
   const [setupNeeded, setSetupNeeded] = useState(false)
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [adminLoading, setAdminLoading] = useState(!isDemo)
 
   useEffect(() => { localStorage.setItem('movva-cart', JSON.stringify(cart)) }, [cart])
 
   useEffect(() => {
     if (!supabase) return
     const client = supabase
-    client.from('products').select('*').eq('active', true).order('sort_order').then(({ data, error }) => {
-      if (data?.length) setProducts(data as Product[])
-      if (error) setSetupNeeded(true)
-    })
+    void refreshProducts()
     async function loadUser(id: string, email: string) {
       const { data } = await client.from('profiles').select('name,cpf,phone,default_address').eq('id', id).maybeSingle()
       setCustomer({ id, email, name: data?.name || email.split('@')[0], cpf: data?.cpf || '', phone: data?.phone || '', default_address: data?.default_address as Address | undefined })
       setAuthLoading(false)
+      const { data: membership } = await client.from('admin_users').select('user_id').eq('user_id', id).maybeSingle()
+      setIsAdmin(Boolean(membership))
+      setAdminLoading(false)
     }
     client.auth.getUser().then(({ data }) => {
       if (data.user) void loadUser(data.user.id, data.user.email || '')
-      else setAuthLoading(false)
+      else { setAuthLoading(false); setAdminLoading(false) }
     })
     const { data: listener } = client.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) void loadUser(session.user.id, session.user.email || '')
-      else { setCustomer(null); setOrders([]); setAuthLoading(false) }
+      if (session?.user) { setIsAdmin(false); setAdminLoading(true); void loadUser(session.user.id, session.user.email || '') }
+      else { setCustomer(null); setOrders([]); setIsAdmin(false); setAuthLoading(false); setAdminLoading(false) }
     })
     return () => listener.subscription.unsubscribe()
   }, [])
+
+  async function refreshProducts() {
+    if (!supabase) return
+    const { data, error } = await supabase.from('products').select('*').eq('active', true).order('sort_order')
+    if (error) { setSetupNeeded(true); return }
+    setProducts((data || []) as Product[])
+    setSetupNeeded(false)
+  }
 
   const cartCount = useMemo(() => cart.reduce((sum, item) => sum + item.quantity, 0), [cart])
 
@@ -153,11 +166,11 @@ export function ShopProvider({ children }: { children: ReactNode }) {
     const { data, error } = await supabase!.rpc('place_order', { p_items: cart.map(item => ({ product_id: item.productId, size: item.size, quantity: item.quantity })), p_address: address, p_payment_method: payment })
     if (error) throw new Error(error.message)
     setCart([])
-    await refreshOrders()
+    await Promise.all([refreshOrders(), refreshProducts()])
     return data as string
   }
 
-  return <ShopContext.Provider value={{ products, cart, customer, authLoading, setupNeeded, orders, cartCount, addItem, changeQuantity, signIn, signUp, signOut, saveProfile, placeOrder, refreshOrders }}>{children}</ShopContext.Provider>
+  return <ShopContext.Provider value={{ products, cart, customer, authLoading, setupNeeded, isAdmin, adminLoading, orders, cartCount, addItem, changeQuantity, signIn, signUp, signOut, saveProfile, placeOrder, refreshOrders, refreshProducts }}>{children}</ShopContext.Provider>
 }
 
 export function useShop() {
