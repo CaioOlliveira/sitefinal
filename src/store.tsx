@@ -24,6 +24,8 @@ type ShopContextType = {
   changeQuantity: (productId: string, size: string, quantity: number) => void
   signIn: (email: string, password: string) => Promise<void>
   signUp: (name: string, email: string, password: string) => Promise<string>
+  verifyEmail: (email: string, token: string) => Promise<void>
+  resendConfirmation: (email: string) => Promise<void>
   signOut: () => Promise<void>
   saveProfile: (profile: Pick<Customer, 'name' | 'cpf' | 'phone' | 'default_address'>) => Promise<void>
   placeOrder: (address: Address, payment: string) => Promise<string>
@@ -110,9 +112,21 @@ export function ShopProvider({ children }: { children: ReactNode }) {
       setCustomer(next)
       return 'Conta de demonstração criada.'
     }
-    const { data, error } = await supabase!.auth.signUp({ email, password, options: { data: { name } } })
+    const { data, error } = await supabase!.auth.signUp({ email, password, options: { data: { name }, emailRedirectTo: `${window.location.origin}/entrar` } })
     if (error) throw new Error(error.message)
-    return data.session ? 'Conta criada com sucesso.' : 'Conta criada! Confirme o e-mail para entrar.'
+    return data.session ? 'Conta criada com sucesso.' : 'Conta criada! Digite o código enviado por e-mail ou abra o link de confirmação.'
+  }
+
+  async function verifyEmail(email: string, token: string) {
+    if (isDemo) throw new Error('A confirmação por e-mail não é usada no modo demonstração.')
+    const { error } = await supabase!.auth.verifyOtp({ email, token, type: 'email' })
+    if (error) throw new Error('Código inválido ou expirado. Confira o e-mail ou solicite outro código.')
+  }
+
+  async function resendConfirmation(email: string) {
+    if (isDemo) throw new Error('A confirmação por e-mail não é usada no modo demonstração.')
+    const { error } = await supabase!.auth.resend({ type: 'signup', email, options: { emailRedirectTo: `${window.location.origin}/entrar` } })
+    if (error) throw new Error(error.message)
   }
 
   async function signOut() {
@@ -170,7 +184,7 @@ export function ShopProvider({ children }: { children: ReactNode }) {
     return data as string
   }
 
-  return <ShopContext.Provider value={{ products, cart, customer, authLoading, setupNeeded, isAdmin, adminLoading, orders, cartCount, addItem, changeQuantity, signIn, signUp, signOut, saveProfile, placeOrder, refreshOrders, refreshProducts }}>{children}</ShopContext.Provider>
+  return <ShopContext.Provider value={{ products, cart, customer, authLoading, setupNeeded, isAdmin, adminLoading, orders, cartCount, addItem, changeQuantity, signIn, signUp, verifyEmail, resendConfirmation, signOut, saveProfile, placeOrder, refreshOrders, refreshProducts }}>{children}</ShopContext.Provider>
 }
 
 export function useShop() {

@@ -1,0 +1,26 @@
+.auth-tabs {
+  flex-wrap: wrap;
+  column-gap: 18px;
+  row-gap: 12px;
+}
+
+.auth-resend {
+  justify-self: center;
+  border: 0;
+  background: transparent;
+  color: #415d22;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+
+.auth-resend:hover {
+  text-decoration: underline;
+}
+
+.auth-resend:disabled {
+  opacity: .5;
+  cursor: wait;
+}

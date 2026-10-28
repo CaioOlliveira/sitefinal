@@ -21,9 +21,19 @@ O arquivo `.env.local` já foi configurado neste computador com **somente a URL 
 1. Abra o projeto em [Supabase](https://supabase.com/dashboard) → **SQL Editor** → **New query**.
 2. Cole e execute todo o conteúdo de [`supabase/schema.sql`](supabase/schema.sql). Se já executou antes, não precisa repetir.
 3. Cole e execute todo o conteúdo de [`supabase/admin.sql`](supabase/admin.sql) para ativar o painel, o estoque e o armazenamento das imagens.
-4. Em **Authentication → URL Configuration**, configure `Site URL` e os endereços de redirecionamento do ambiente local e do site publicado.
-5. Em **Authentication → Providers → Email**, mantenha a confirmação por e-mail e teste o link de confirmação. Se preferir desligá-la apenas durante a apresentação, reative-a depois.
+4. Em **Authentication → URL Configuration**, configure `Site URL` e os endereços de redirecionamento conforme a seção **Confirmação de e-mail no celular** abaixo.
+5. Em **Authentication → Providers → Email**, mantenha a confirmação por e-mail ativa.
 6. Reinicie o servidor local. O aviso “Catálogo de exemplo” deve desaparecer quando a tabela `products` estiver acessível.
+
+### Confirmação de e-mail no celular
+
+O cadastro usa **Supabase Auth com e-mail e senha**, não OAuth. Quando o `Site URL` aponta para `localhost` ou `127.0.0.1`, o link aberto no celular tenta acessar o próprio celular e falha. A página da loja agora oferece **Confirmar e-mail** para digitar o código recebido no telefone diretamente no computador, além de **Reenviar código**.
+
+Para o e-mail incluir esse código, abra **Supabase → Authentication → Email Templates → Confirm sign up**, substitua o conteúdo pelo arquivo [`supabase/confirmation-email.html`](supabase/confirmation-email.html) e salve. O arquivo usa `{{ .Token }}` para o código e mantém `{{ .ConfirmationURL }}` como alternativa de confirmação. Essa configuração do template é feita no painel do Supabase, não pelo SQL Editor.
+
+No desenvolvimento local, adicione à lista **Redirect URLs** do Supabase o endereço exato que aparece no navegador: `http://127.0.0.1:5173/entrar` ou `http://localhost:5173/entrar`. O aplicativo envia o endereço atual em `emailRedirectTo`; a URL precisa estar permitida. Se o e-mail antigo já foi aberto e terminou numa página `localhost` com erro, tente primeiro entrar na loja no computador: o Supabase pode ter confirmado a conta antes de tentar redirecionar. Se ainda não estiver confirmada, use **Confirmar e-mail → Reenviar código** para receber o novo template.
+
+Após publicar na Vercel, altere **Site URL** para a URL HTTPS definitiva da loja (por exemplo, `https://sua-loja.vercel.app`) e inclua `https://sua-loja.vercel.app/entrar` em **Redirect URLs**. Assim, o link poderá abrir no celular. Os e-mails antigos continuam com o destino antigo; reenvie a confirmação depois dessa alteração. Não use `localhost` como `Site URL` de produção.
 
 ### Criar o primeiro administrador
 
@@ -77,7 +87,7 @@ O painel administrativo exige Supabase e fica indisponível nesse modo.
 1. Envie o projeto para um repositório e importe-o na Vercel como projeto **Vite**. Use `npm run build` e a pasta de saída `dist`.
 2. Configure as variáveis `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` na Vercel com a URL do projeto Supabase e **somente a chave publicável**. Nunca configure a chave `sb_secret_...` no frontend.
 3. O arquivo [`vercel.json`](vercel.json) faz as rotas internas do React Router abrirem diretamente, como `/admin` e `/produto/...`.
-4. Adicione o domínio HTTPS da Vercel em **Supabase Authentication → URL Configuration**.
+4. Configure o domínio HTTPS da Vercel em **Supabase Authentication → URL Configuration** como descrito em **Confirmação de e-mail no celular**.
 5. Teste cadastro, confirmação de e-mail, login, criação de produto, pedido e painel no domínio publicado antes de compartilhar o link no Teams.
 
 O arquivo `public/robots.txt`, títulos por página, HTML semântico, descrições e imagens locais apoiam o SEO. Como a loja é uma SPA, páginas de produto seriam indexadas com mais robustez se fossem pré-renderizadas ou migradas para renderização no servidor em uma versão de produção.

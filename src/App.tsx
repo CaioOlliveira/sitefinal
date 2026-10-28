@@ -5,6 +5,7 @@ import { digits, lookupCep, money, shippingForCep, validCpf, type Address, type 
 import { useShop } from './store'
 import { isDemo } from './supabase'
 import './style.css'
+import './auth.css'
 
 const Admin = lazy(() => import('./Admin'))
 
@@ -130,28 +131,50 @@ function Cart() {
 }
 
 function AuthPage() {
-  const { signIn, signUp, customer } = useShop()
+  const { signIn, signUp, verifyEmail, resendConfirmation, customer } = useShop()
   const [params] = useSearchParams()
   const navigate = useNavigate()
-  const [mode, setMode] = useState<'login' | 'register'>('login')
+  const [mode, setMode] = useState<'login' | 'register' | 'verify'>('login')
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
+  const [token, setToken] = useState('')
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)
   useEffect(() => { if (customer) navigate(params.get('proximo') || '/conta', { replace: true }) }, [customer, navigate, params])
   async function submit(event: FormEvent) {
     event.preventDefault(); setMessage('')
+    if (mode === 'verify') {
+      if (!/^\d{6,8}$/.test(token)) { setMessage('Digite o código numérico recebido por e-mail.'); return }
+      setLoading(true)
+      try { await verifyEmail(email.trim().toLowerCase(), token); setMessage('E-mail confirmado com sucesso!') }
+      catch (error) { setMessage((error as Error).message) }
+      finally { setLoading(false) }
+      return
+    }
     if (password.length < 6) { setMessage('A senha precisa ter pelo menos 6 caracteres.'); return }
     if (mode === 'register' && password !== confirm) { setMessage('As senhas não coincidem.'); return }
     if (mode === 'register' && name.trim().length < 2) { setMessage('Informe seu nome.'); return }
     setLoading(true)
-    try { if (mode === 'register') { const result = await signUp(name.trim(), email.trim().toLowerCase(), password); setMessage(result) } else await signIn(email.trim().toLowerCase(), password) }
+    try {
+      if (mode === 'register') {
+        const result = await signUp(name.trim(), email.trim().toLowerCase(), password)
+        if (!isDemo && result.startsWith('Conta criada!')) setMode('verify')
+        setMessage(result)
+      } else await signIn(email.trim().toLowerCase(), password)
+    }
     catch (error) { setMessage((error as Error).message) }
     finally { setLoading(false) }
   }
-  return <main className="auth-page"><div className="auth-visual"><img src="/images/category-run.jpg" alt="Pessoas correndo ao ar livre"/><div><span className="eyebrow">SEU MOVIMENTO COMEÇA AQUI</span><h2>O próximo<br/>passo é seu.</h2></div></div><div className="auth-form-wrap"><div className="auth-form"><span className="eyebrow">BEM-VINDO À MOVVA</span><h1>{mode === 'login' ? 'Entre no seu ritmo.' : 'Crie sua conta.'}</h1><p>{mode === 'login' ? 'Acesse sua conta para continuar sua compra e acompanhar pedidos.' : 'Junte-se a quem vive cada dia em movimento.'}</p><div className="auth-tabs"><button className={mode === 'login' ? 'active' : ''} onClick={() => { setMode('login'); setMessage('') }}>ENTRAR</button><button className={mode === 'register' ? 'active' : ''} onClick={() => { setMode('register'); setMessage('') }}>CRIAR CONTA</button></div><form onSubmit={submit} className="form-grid">{mode === 'register' && <label>Nome completo<input required value={name} onChange={e => setName(e.target.value)} autoComplete="name" placeholder="Seu nome"/></label>}<label>E-mail<input required type="email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" placeholder="voce@exemplo.com"/></label><label>Senha<input required type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} placeholder="Mínimo 6 caracteres"/></label>{mode === 'register' && <label>Confirmar senha<input required type="password" value={confirm} onChange={e => setConfirm(e.target.value)} autoComplete="new-password" placeholder="Repita sua senha"/></label>}{message && <p className={`form-message ${message.includes('sucesso') || message.includes('Confirme') || message.includes('demonstração criada') ? 'success' : 'error'}`}>{message}</p>}<button type="submit" className="button button-dark full" disabled={loading}>{loading ? 'AGUARDE...' : mode === 'login' ? 'ENTRAR NA MINHA CONTA' : 'CRIAR MINHA CONTA'} <ArrowRight size={18}/></button></form><p className="auth-footnote"><LockKeyhole size={16}/>{isDemo ? 'Modo demonstração: contas locais, sem segurança de produção.' : 'Autenticação segura pelo Supabase.'}</p></div></div></main>
+  async function resend() {
+    if (!email.trim()) { setMessage('Informe seu e-mail para reenviar o código.'); return }
+    setLoading(true); setMessage('')
+    try { await resendConfirmation(email.trim().toLowerCase()); setMessage('Novo código enviado. Confira sua caixa de entrada e o spam.') }
+    catch (error) { setMessage((error as Error).message) }
+    finally { setLoading(false) }
+  }
+  return <main className="auth-page"><div className="auth-visual"><img src="/images/category-run.jpg" alt="Pessoas correndo ao ar livre"/><div><span className="eyebrow">SEU MOVIMENTO COMEÇA AQUI</span><h2>O próximo<br/>passo é seu.</h2></div></div><div className="auth-form-wrap"><div className="auth-form"><span className="eyebrow">BEM-VINDO À MOVVA</span><h1>{mode === 'login' ? 'Entre no seu ritmo.' : mode === 'register' ? 'Crie sua conta.' : 'Confirme seu e-mail.'}</h1><p>{mode === 'login' ? 'Acesse sua conta para continuar sua compra e acompanhar pedidos.' : mode === 'register' ? 'Junte-se a quem vive cada dia em movimento.' : 'Leia o código no celular e digite aqui, mesmo que o link do e-mail não abra no celular.'}</p><div className="auth-tabs"><button type="button" className={mode === 'login' ? 'active' : ''} onClick={() => { setMode('login'); setMessage('') }}>ENTRAR</button><button type="button" className={mode === 'register' ? 'active' : ''} onClick={() => { setMode('register'); setMessage('') }}>CRIAR CONTA</button>{!isDemo && <button type="button" className={mode === 'verify' ? 'active' : ''} onClick={() => { setMode('verify'); setMessage('') }}>CONFIRMAR E-MAIL</button>}</div><form onSubmit={submit} className="form-grid">{mode === 'register' && <label>Nome completo<input required value={name} onChange={e => setName(e.target.value)} autoComplete="name" placeholder="Seu nome"/></label>}<label>E-mail<input required type="email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" placeholder="voce@exemplo.com"/></label>{mode === 'verify' ? <label>Código de confirmação<input required value={token} onChange={e => setToken(e.target.value.replace(/\D/g, '').slice(0, 8))} inputMode="numeric" autoComplete="one-time-code" placeholder="Código recebido por e-mail"/></label> : <label>Senha<input required type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} placeholder="Mínimo 6 caracteres"/></label>}{mode === 'register' && <label>Confirmar senha<input required type="password" value={confirm} onChange={e => setConfirm(e.target.value)} autoComplete="new-password" placeholder="Repita sua senha"/></label>}{message && <p role="status" className={`form-message ${message.includes('sucesso') || message.includes('enviado') || message.includes('confirmou') || message.includes('demonstração criada') ? 'success' : 'error'}`}>{message}</p>}<button type="submit" className="button button-dark full" disabled={loading}>{loading ? 'AGUARDE...' : mode === 'login' ? 'ENTRAR NA MINHA CONTA' : mode === 'register' ? 'CRIAR MINHA CONTA' : 'CONFIRMAR E-MAIL'} <ArrowRight size={18}/></button>{mode === 'verify' && <button type="button" className="auth-resend" onClick={resend} disabled={loading}>REENVIAR CÓDIGO</button>}</form><p className="auth-footnote"><LockKeyhole size={16}/>{isDemo ? 'Modo demonstração: contas locais, sem segurança de produção.' : 'Autenticação segura pelo Supabase.'}</p></div></div></main>
 }
 
 const emptyAddress: Address = { cep: '', street: '', number: '', complement: '', district: '', city: '', state: '' }
