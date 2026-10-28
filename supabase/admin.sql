@@ -23,6 +23,60 @@ $$;
 revoke all on function public.is_admin() from public, anon;
 grant execute on function public.is_admin() to authenticated;
 
+-- Um administrador pode autorizar contas já cadastradas. Senhas nunca são
+-- lidas ou geradas pelo painel; cada pessoa usa a própria conta do Auth.
+create or replace function public.admin_list_users()
+returns table(user_id uuid, email text, created_at timestamptz)
+language plpgsql stable security definer set search_path = '' as $$
+begin
+  if not public.is_admin() then raise exception 'Acesso negado'; end if;
+  return query
+    select a.user_id, u.email::text, a.created_at
+    from public.admin_users as a
+    join auth.users as u on u.id = a.user_id
+    order by a.created_at, u.email;
+end;
+$$;
+revoke all on function public.admin_list_users() from public, anon;
+grant execute on function public.admin_list_users() to authenticated;
+
+create or replace function public.admin_add_user(p_email text)
+returns uuid language plpgsql security definer set search_path = '' as $$
+declare
+  v_user_id uuid;
+begin
+  if not public.is_admin() then raise exception 'Acesso negado'; end if;
+  select u.id into v_user_id from auth.users as u
+  where lower(u.email) = lower(trim(p_email)) limit 1;
+  if v_user_id is null then
+    raise exception 'Conta não encontrada. A pessoa precisa se cadastrar na loja primeiro.';
+  end if;
+  insert into public.admin_users (user_id) values (v_user_id)
+  on conflict (user_id) do nothing;
+  return v_user_id;
+end;
+$$;
+revoke all on function public.admin_add_user(text) from public, anon;
+grant execute on function public.admin_add_user(text) to authenticated;
+
+create or replace function public.admin_remove_user(p_user_id uuid)
+returns void language plpgsql security definer set search_path = '' as $$
+begin
+  if not public.is_admin() then raise exception 'Acesso negado'; end if;
+  if p_user_id = (select auth.uid()) then
+    raise exception 'Você não pode remover seu próprio acesso.';
+  end if;
+  lock table public.admin_users in exclusive mode;
+  if (select count(*) from public.admin_users) <= 1 then
+    raise exception 'A loja precisa manter pelo menos um administrador.';
+  end if;
+  delete from public.admin_users where user_id = p_user_id;
+  if not found then raise exception 'Administrador não encontrado.'; end if;
+end;
+$$;
+revoke all on function public.admin_remove_user(uuid) from public, anon;
+grant execute on function public.admin_remove_user(uuid) to authenticated;
+
 alter table public.products add column if not exists stock integer not null default 20;
 do $$ begin
   if not exists (select 1 from pg_constraint where conname = 'products_stock_nonnegative') then
@@ -37,6 +91,26 @@ revoke insert, update, delete on public.products from anon;
 revoke insert, update, delete on public.orders from anon, authenticated;
 revoke insert, update, delete on public.order_items from anon, authenticated;
 revoke delete on public.products from authenticated;
+
+-- Produtos com pedidos ficam no histórico e só podem ser arquivados.
+create or replace function public.admin_delete_product(p_product_id text)
+returns text language plpgsql security definer set search_path = '' as $$
+declare
+  v_image text;
+begin
+  if not public.is_admin() then raise exception 'Acesso negado'; end if;
+  select image into v_image from public.products where id = p_product_id for update;
+  if not found then raise exception 'Produto não encontrado.'; end if;
+  if exists (select 1 from public.order_items where product_id = p_product_id) then
+    raise exception 'Este produto já aparece em pedidos. Arquive-o para preservar o histórico.';
+  end if;
+  delete from public.products where id = p_product_id;
+  if exists (select 1 from public.products where image = v_image) then return null; end if;
+  return v_image;
+end;
+$$;
+revoke all on function public.admin_delete_product(text) from public, anon;
+grant execute on function public.admin_delete_product(text) to authenticated;
 
 drop policy if exists "admin reads all products" on public.products;
 create policy "admin reads all products" on public.products

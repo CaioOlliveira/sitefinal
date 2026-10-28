@@ -74,7 +74,10 @@ export function ShopProvider({ children }: { children: ReactNode }) {
     if (!supabase) return
     const { data, error } = await supabase.from('products').select('*').eq('active', true).order('sort_order')
     if (error) { setSetupNeeded(true); return }
-    setProducts((data || []) as Product[])
+    const availableProducts = (data || []) as Product[]
+    const availableIds = new Set(availableProducts.map(product => product.id))
+    setProducts(availableProducts)
+    setCart(current => current.every(item => availableIds.has(item.productId)) ? current : current.filter(item => availableIds.has(item.productId)))
     setSetupNeeded(false)
   }
 

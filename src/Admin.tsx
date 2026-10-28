@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link, NavLink, Navigate, useLocation } from 'react-router-dom'
-import { ArrowLeft, ArrowRight, BarChart3, Boxes, Check, ChevronDown, CircleAlert, ImagePlus, Package, Pencil, Plus, RefreshCw, Search, ShoppingBag, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, BarChart3, Boxes, Check, ChevronDown, CircleAlert, ImagePlus, Package, Pencil, Plus, RefreshCw, Search, ShoppingBag, Trash2, UserPlus, Users, X } from 'lucide-react'
 import { money, type Address, type Category, type Product } from './data'
 import { useShop } from './store'
 import { isDemo, supabase } from './supabase'
 import './admin.css'
+import './admin-extra.css'
 
 type AdminOrder = {
   id: string
@@ -16,6 +17,8 @@ type AdminOrder = {
   address: Address
   order_items: { id: number; name: string; size: string; quantity: number; unit_price: number }[]
 }
+
+type AdminUser = { user_id: string; email: string; created_at: string }
 
 type ProductForm = {
   name: string; slug: string; category: Category; subtitle: string; price: string; old_price: string
@@ -36,6 +39,10 @@ export default function Admin() {
   const { pathname } = useLocation()
   const [products, setProducts] = useState<Product[]>([])
   const [orders, setOrders] = useState<AdminOrder[]>([])
+  const [admins, setAdmins] = useState<AdminUser[]>([])
+  const [newAdminEmail, setNewAdminEmail] = useState('')
+  const [busyAdmin, setBusyAdmin] = useState(false)
+  const [deletingProduct, setDeletingProduct] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -71,6 +78,15 @@ export default function Admin() {
   }
 
   useEffect(() => { if (isAdmin) void load() }, [isAdmin])
+
+  async function loadAdmins() {
+    if (!supabase) return
+    const { data, error: resultError } = await supabase.rpc('admin_list_users')
+    if (resultError) setError(resultError.message)
+    else setAdmins((data || []) as AdminUser[])
+  }
+
+  useEffect(() => { if (isAdmin && pathname.startsWith('/admin/equipe')) void loadAdmins() }, [isAdmin, pathname])
 
   const activeProducts = products.filter(product => product.active !== false)
   const validOrders = useMemo(() => orders.filter(order => order.status !== 'cancelado'), [orders])
@@ -153,6 +169,50 @@ export default function Admin() {
     await Promise.all([load(), refreshProducts()])
   }
 
+  async function deleteProduct(product: Product) {
+    if (!supabase || !window.confirm(`Remover “${product.name}” definitivamente? Produtos que já aparecem em pedidos devem ser arquivados.`)) return
+    setDeletingProduct(product.id); setError(''); setNotice('')
+    try {
+      const { data: image, error: resultError } = await supabase.rpc('admin_delete_product', { p_product_id: product.id })
+      if (resultError) throw resultError
+      let imageWarning = ''
+      if (typeof image === 'string') {
+        const imageUrl = new URL(image, window.location.origin)
+        const storageOrigin = new URL(import.meta.env.VITE_SUPABASE_URL).origin
+        const prefix = '/storage/v1/object/public/product-images/'
+        if (imageUrl.origin === storageOrigin && imageUrl.pathname.startsWith(prefix)) {
+          try {
+            const imagePath = decodeURIComponent(imageUrl.pathname.slice(prefix.length))
+            const removed = await supabase.storage.from('product-images').remove([imagePath])
+            if (removed.error) imageWarning = ' A foto enviada continua no armazenamento; remova-a no Supabase.'
+          } catch { imageWarning = ' A foto enviada continua no armazenamento; remova-a no Supabase.' }
+        }
+      }
+      setNotice(`Produto removido.${imageWarning}`)
+      await Promise.all([load(), refreshProducts()])
+    } catch (cause) { setError((cause as Error).message || 'Não foi possível remover o produto.') }
+    finally { setDeletingProduct(null) }
+  }
+
+  async function addAdmin(event: FormEvent) {
+    event.preventDefault()
+    if (!supabase) return
+    setBusyAdmin(true); setError(''); setNotice('')
+    const { error: resultError } = await supabase.rpc('admin_add_user', { p_email: newAdminEmail.trim().toLowerCase() })
+    if (resultError) setError(resultError.message)
+    else { setNewAdminEmail(''); setNotice('Administrador adicionado. A pessoa já pode acessar /admin com a própria conta.'); await loadAdmins() }
+    setBusyAdmin(false)
+  }
+
+  async function removeAdmin(admin: AdminUser) {
+    if (!supabase || !window.confirm(`Remover o acesso de ${admin.email} ao painel?`)) return
+    setBusyAdmin(true); setError(''); setNotice('')
+    const { error: resultError } = await supabase.rpc('admin_remove_user', { p_user_id: admin.user_id })
+    if (resultError) setError(resultError.message)
+    else { setNotice('Acesso administrativo removido.'); await loadAdmins() }
+    setBusyAdmin(false)
+  }
+
   async function changeStatus(order: AdminOrder, status: string) {
     if (!supabase || status === order.status) return
     setBusyOrder(order.id); setError(''); setNotice('')
@@ -162,10 +222,10 @@ export default function Admin() {
     setBusyOrder(null)
   }
 
-  const section = pathname.startsWith('/admin/produtos') ? 'products' : pathname.startsWith('/admin/pedidos') ? 'orders' : 'dashboard'
+  const section = pathname.startsWith('/admin/produtos') ? 'products' : pathname.startsWith('/admin/pedidos') ? 'orders' : pathname.startsWith('/admin/equipe') ? 'team' : 'dashboard'
   return <main className="admin-shell">
     <div className="container admin-hero"><div><span className="eyebrow">MOVVA / GESTÃO</span><h1>Painel da loja<span className="accent-dot">.</span></h1><p>Olá, {customer.name.split(' ')[0]}. Acompanhe a operação da sua loja em um só lugar.</p></div><Link to="/" className="admin-store-link"><ArrowLeft size={17}/> VER LOJA</Link></div>
-    <div className="container admin-layout"><aside className="admin-sidebar"><div className="admin-sidebar-title">MENU PRINCIPAL</div><NavLink end to="/admin"><BarChart3 size={19}/> Visão geral <ArrowRight size={16}/></NavLink><NavLink to="/admin/produtos"><Boxes size={19}/> Produtos <ArrowRight size={16}/></NavLink><NavLink to="/admin/pedidos"><ShoppingBag size={19}/> Pedidos <ArrowRight size={16}/></NavLink><div className="admin-side-note"><span>LOJA DEMONSTRATIVA</span><p>Os valores exibidos representam pedidos sem cobrança real.</p></div></aside>
+    <div className="container admin-layout"><aside className="admin-sidebar"><div className="admin-sidebar-title">MENU PRINCIPAL</div><NavLink end to="/admin"><BarChart3 size={19}/> Visão geral <ArrowRight size={16}/></NavLink><NavLink to="/admin/produtos"><Boxes size={19}/> Produtos <ArrowRight size={16}/></NavLink><NavLink to="/admin/pedidos"><ShoppingBag size={19}/> Pedidos <ArrowRight size={16}/></NavLink><NavLink to="/admin/equipe"><Users size={19}/> Equipe <ArrowRight size={16}/></NavLink><div className="admin-side-note"><span>LOJA DEMONSTRATIVA</span><p>Os valores exibidos representam pedidos sem cobrança real.</p></div></aside>
       <section className="admin-content">
         {error && <div className="admin-alert error" role="alert"><CircleAlert size={18}/>{error}<button onClick={() => setError('')} aria-label="Fechar aviso"><X size={16}/></button></div>}
         {notice && <div className="admin-alert success" role="status"><Check size={18}/>{notice}<button onClick={() => setNotice('')} aria-label="Fechar aviso"><X size={16}/></button></div>}
@@ -177,10 +237,14 @@ export default function Admin() {
         </> : section === 'products' ? <>
           <div className="admin-section-head"><div><span className="eyebrow">CATÁLOGO / ESTOQUE</span><h2>Produtos</h2><p>{products.length} itens cadastrados · {activeProducts.length} na vitrine</p></div><button className="button button-lime" onClick={() => openProduct()}><Plus size={17}/> NOVO PRODUTO</button></div>
           <div className="admin-toolbar"><label className="admin-search"><Search size={18}/><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Buscar por nome, categoria ou slug"/></label><select aria-label="Filtrar produtos" value={filter} onChange={event => setFilter(event.target.value)}><option value="todos">Todos</option><option value="ativos">Ativos</option><option value="arquivados">Arquivados</option></select></div>
-          <div className="admin-products">{visibleProducts.length ? visibleProducts.map(product => <div className="admin-product-row" key={product.id}><img src={product.image} alt=""/><div className="admin-product-name"><strong>{product.name}</strong><span>{product.category} · {product.subtitle}</span></div><div className="admin-product-price"><strong>{money(Number(product.price))}</strong><small>{product.stock ?? 0} em estoque</small></div><span className={`admin-pill ${product.active === false ? 'inactive' : (product.stock ?? 0) <= 5 ? 'warning' : ''}`}>{product.active === false ? 'Arquivado' : (product.stock ?? 0) === 0 ? 'Esgotado' : (product.stock ?? 0) <= 5 ? 'Baixo estoque' : 'Ativo'}</span><div className="admin-row-actions"><button title="Editar produto" aria-label={`Editar ${product.name}`} onClick={() => openProduct(product)}><Pencil size={17}/></button><button className="admin-archive" onClick={() => void toggleProduct(product)}>{product.active === false ? 'Reativar' : 'Arquivar'}</button></div></div>) : <div className="admin-empty">Nenhum produto encontrado.</div>}</div>
-        </> : <>
+          <div className="admin-products">{visibleProducts.length ? visibleProducts.map(product => <div className="admin-product-row" key={product.id}><img src={product.image} alt=""/><div className="admin-product-name"><strong>{product.name}</strong><span>{product.category} · {product.subtitle}</span></div><div className="admin-product-price"><strong>{money(Number(product.price))}</strong><small>{product.stock ?? 0} em estoque</small></div><span className={`admin-pill ${product.active === false ? 'inactive' : (product.stock ?? 0) <= 5 ? 'warning' : ''}`}>{product.active === false ? 'Arquivado' : (product.stock ?? 0) === 0 ? 'Esgotado' : (product.stock ?? 0) <= 5 ? 'Baixo estoque' : 'Ativo'}</span><div className="admin-row-actions"><button title="Editar produto" aria-label={`Editar ${product.name}`} onClick={() => openProduct(product)}><Pencil size={17}/></button><button className="admin-archive" onClick={() => void toggleProduct(product)}>{product.active === false ? 'Reativar' : 'Arquivar'}</button><button className="admin-delete" title="Remover produto" aria-label={`Remover ${product.name}`} disabled={deletingProduct === product.id} onClick={() => void deleteProduct(product)}><Trash2 size={17}/></button></div></div>) : <div className="admin-empty">Nenhum produto encontrado.</div>}</div>
+        </> : section === 'orders' ? <>
           <div className="admin-section-head"><div><span className="eyebrow">VENDAS / ENTREGA</span><h2>Pedidos</h2><p>{orders.length} pedidos demonstrativos registrados</p></div><button className="admin-quiet" onClick={() => void load()}><RefreshCw size={16}/> ATUALIZAR</button></div>
           <div className="admin-toolbar"><label className="admin-search"><Search size={18}/><input value={orderQuery} onChange={event => setOrderQuery(event.target.value)} placeholder="Buscar pedido, cidade ou produto"/></label><select aria-label="Filtrar pedidos por status" value={orderFilter} onChange={event => setOrderFilter(event.target.value)}><option value="todos">Todos os status</option>{statuses.map(status => <option key={status} value={status}>{statusNames[status]}</option>)}</select></div><div className="admin-orders">{visibleOrders.length ? visibleOrders.map(order => <div className="admin-order" key={order.id}><button className="admin-order-head" onClick={() => setExpandedOrder(expandedOrder === order.id ? null : order.id)} aria-expanded={expandedOrder === order.id}><span><small>PEDIDO</small><strong>#{order.id.slice(0, 12).toUpperCase()}</strong></span><span><small>DATA</small><strong>{date(order.created_at)}</strong></span><span><small>ITENS</small><strong>{order.order_items.reduce((sum, item) => sum + item.quantity, 0)}</strong></span><span><small>TOTAL</small><strong>{money(Number(order.total))}</strong></span><span className={`admin-status ${order.status}`}>{statusNames[order.status] || order.status}</span><ChevronDown size={18}/></button>{expandedOrder === order.id && <div className="admin-order-details"><div><h4>Itens do pedido</h4>{order.order_items.map(item => <p key={item.id}>{item.quantity} × {item.name} · Tam. {item.size}<strong>{money(Number(item.unit_price) * item.quantity)}</strong></p>)}<p className="admin-order-shipping">Frete <strong>{money(Number(order.shipping))}</strong></p></div><div><h4>Entrega</h4><p>{order.address.street}, {order.address.number}{order.address.complement ? ` · ${order.address.complement}` : ''}<br/>{order.address.district} · {order.address.city}/{order.address.state}<br/>CEP {order.address.cep}</p><small>Pagamento: {order.payment_method === 'cartao' ? 'Cartão' : order.payment_method === 'pix' ? 'Pix' : 'Boleto'} (simulado)</small><label className="admin-status-select">Alterar status<select disabled={busyOrder === order.id} value={order.status} onChange={event => void changeStatus(order, event.target.value)}>{statuses.map(status => <option value={status} key={status}>{statusNames[status]}</option>)}</select></label></div></div>}</div>) : <div className="admin-empty"><Package size={31}/><p>Nenhum pedido encontrado para este filtro.</p></div>}</div>
+        </> : <>
+          <div className="admin-section-head"><div><span className="eyebrow">ACESSO / EQUIPE</span><h2>Administradores</h2><p>Autorize pessoas que já criaram uma conta na loja.</p></div><button className="admin-quiet" onClick={() => void loadAdmins()}><RefreshCw size={16}/> ATUALIZAR</button></div>
+          <div className="admin-panel admin-team-panel"><div className="admin-panel-head"><div><span className="eyebrow">NOVO ACESSO</span><h3>Adicionar administrador</h3></div><UserPlus size={24}/></div><p>A pessoa precisa se cadastrar e confirmar o e-mail. Ela usará a própria senha para entrar.</p><form className="admin-team-form" onSubmit={event => void addAdmin(event)}><label>E-mail da conta<input type="email" required maxLength={254} value={newAdminEmail} onChange={event => setNewAdminEmail(event.target.value)} placeholder="pessoa@exemplo.com"/></label><button className="button button-dark" disabled={busyAdmin} type="submit">ADICIONAR <ArrowRight size={16}/></button></form></div>
+          <div className="admin-panel admin-team-panel"><div className="admin-panel-head"><div><span className="eyebrow">ACESSOS ATIVOS</span><h3>Equipe da loja</h3></div><strong>{admins.length}</strong></div><div className="admin-team-list">{admins.length ? admins.map(admin => <div className="admin-team-row" key={admin.user_id}><span className="admin-team-avatar"><Users size={19}/></span><div><strong>{admin.email}</strong><small>Desde {date(admin.created_at)}{admin.user_id === customer.id ? ' · Você' : ''}</small></div><button type="button" disabled={busyAdmin || admin.user_id === customer.id} onClick={() => void removeAdmin(admin)} aria-label={`Remover acesso de ${admin.email}`}>REMOVER</button></div>) : <p className="admin-empty">Nenhum administrador encontrado.</p>}</div></div>
         </>}
       </section></div>
     {editing && <div className="admin-modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget && !saving) setEditing(null) }}><section className="admin-modal" role="dialog" aria-modal="true" aria-label={editing === 'new' ? 'Novo produto' : 'Editar produto'}><div className="admin-modal-head"><div><span className="eyebrow">CATÁLOGO MOVVA</span><h2>{editing === 'new' ? 'Novo produto' : 'Editar produto'}</h2></div><button onClick={() => setEditing(null)} disabled={saving} aria-label="Fechar"><X size={22}/></button></div><form onSubmit={saveProduct} className="admin-form"><div className="admin-form-grid"><label className="wide">Nome do produto<input required value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} placeholder="Ex.: Tênis Urban Flow"/></label><label>Categoria<select value={form.category} onChange={event => setForm({ ...form, category: event.target.value as Category })}><option>Tênis</option><option>Roupas</option><option>Acessórios</option></select></label><label>Subtítulo<input required value={form.subtitle} onChange={event => setForm({ ...form, subtitle: event.target.value })} placeholder="Corrida • Unissex"/></label><label className="wide">Slug da URL <small>(opcional; gerado pelo nome)</small><input value={form.slug} onChange={event => setForm({ ...form, slug: event.target.value })} placeholder="tenis-urban-flow"/></label><label>Preço (R$)<input required type="number" min="0.01" step="0.01" value={form.price} onChange={event => setForm({ ...form, price: event.target.value })} placeholder="299.90"/></label><label>Preço anterior (R$)<input type="number" min="0.01" step="0.01" value={form.old_price} onChange={event => setForm({ ...form, old_price: event.target.value })} placeholder="Opcional"/></label><label>Estoque<input required type="number" min="0" step="1" value={form.stock} onChange={event => setForm({ ...form, stock: event.target.value })}/></label><label>Selo <small>(opcional)</small><input value={form.badge} onChange={event => setForm({ ...form, badge: event.target.value })} placeholder="NOVO"/></label><label className="wide">Tamanhos <small>(separados por vírgula)</small><input required value={form.sizes} onChange={event => setForm({ ...form, sizes: event.target.value })} placeholder="P, M, G, GG"/></label><label className="wide">Descrição<textarea required rows={3} value={form.description} onChange={event => setForm({ ...form, description: event.target.value })} placeholder="Conte os detalhes da peça..."/></label><label className="wide">URL da imagem <small>(ou envie um arquivo abaixo)</small><input value={form.image} onChange={event => setForm({ ...form, image: event.target.value })} placeholder="https://..."/></label><label className="wide admin-upload"><ImagePlus size={22}/><span>{imageFile ? imageFile.name : 'Escolher foto JPG, PNG ou WebP · até 5 MB'}</span><input type="file" accept="image/jpeg,image/png,image/webp" onChange={event => setImageFile(event.target.files?.[0] || null)}/></label>{(imageFile || form.image) && <div className="admin-image-preview"><img src={imagePreview} alt="Prévia do produto"/></div>}<label className="admin-check"><input type="checkbox" checked={form.featured} onChange={event => setForm({ ...form, featured: event.target.checked })}/> Destacar na página inicial</label><label className="admin-check"><input type="checkbox" checked={form.active} onChange={event => setForm({ ...form, active: event.target.checked })}/> Produto ativo na loja</label></div>{error && <p className="form-message error" role="alert">{error}</p>}<div className="admin-form-footer"><button type="button" className="button button-outline" onClick={() => setEditing(null)} disabled={saving}>CANCELAR</button><button type="submit" className="button button-dark" disabled={saving}>{saving ? 'SALVANDO...' : 'SALVAR PRODUTO'} <ArrowRight size={17}/></button></div></form></section></div>}

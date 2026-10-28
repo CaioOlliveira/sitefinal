@@ -20,7 +20,7 @@ O arquivo `.env.local` já foi configurado neste computador com **somente a URL 
 
 1. Abra o projeto em [Supabase](https://supabase.com/dashboard) → **SQL Editor** → **New query**.
 2. Cole e execute todo o conteúdo de [`supabase/schema.sql`](supabase/schema.sql). Se já executou antes, não precisa repetir.
-3. Cole e execute todo o conteúdo de [`supabase/admin.sql`](supabase/admin.sql) para ativar o painel, o estoque e o armazenamento das imagens.
+3. Cole e execute todo o conteúdo de [`supabase/admin.sql`](supabase/admin.sql) para ativar o painel, o estoque, o armazenamento das imagens, a remoção de produtos e a gestão de administradores. Se já executou uma versão anterior, execute o arquivo inteiro novamente para instalar as funções novas.
 4. Em **Authentication → URL Configuration**, configure `Site URL` e os endereços de redirecionamento conforme a seção **Confirmação de e-mail no celular** abaixo.
 5. Em **Authentication → Providers → Email**, mantenha a confirmação por e-mail ativa.
 6. Reinicie o servidor local. O aviso “Catálogo de exemplo” deve desaparecer quando a tabela `products` estiver acessível.
@@ -58,7 +58,9 @@ where lower(u.email) = lower('SEU_EMAIL_AQUI');
 
 Se não vier nenhuma linha, crie a conta em `/entrar`. Se `user_id` vier vazio, execute o `insert` novamente com o e-mail correto. Se aparecer um UUID em `user_id`, atualize a página da loja; o link **Admin** aparecerá no menu. A rota direta é `/admin`.
 
-Não crie uma opção de cadastro de administrador no site: essa permissão só deve ser concedida pelo SQL Editor. A tabela `admin_users` e as políticas RLS impedem que clientes comuns atribuam essa permissão a si mesmos.
+O primeiro administrador é autorizado pelo SQL Editor. Depois disso, somente um administrador já autorizado pode conceder acesso pela seção **Equipe**. A tabela `admin_users` e as funções do banco impedem que clientes comuns atribuam essa permissão a si mesmos.
+
+Depois da autorização inicial, use **/admin/equipe** para incluir ou remover outros administradores. Cada pessoa precisa primeiro criar uma conta comum em `/entrar` e confirmar o e-mail; então um administrador informa esse e-mail em **Equipe**. Ninguém recebe uma senha nova pelo painel: a pessoa entra com a senha da própria conta. O administrador não pode remover seu próprio acesso. A chave publicável do Supabase configura o aplicativo, mas não é uma senha de administrador; a chave secreta não deve ser usada no navegador.
 
 Sem o SQL, a loja mostra produtos de exemplo, mas **não consegue gravar pedidos no Supabase**. Para testar o fluxo inteiro sem configurar o banco, acrescente `VITE_DEMO_MODE=1` ao `.env.local` e reinicie o Vite. Nesse modo, os dados ficam apenas no `localStorage` do navegador; login e pedidos são simulações.
 O painel administrativo exige Supabase e fica indisponível nesse modo.
@@ -71,7 +73,7 @@ O painel administrativo exige Supabase e fica indisponível nesse modo.
 - **Entrega:** consulta o endereço na [API oficial do ViaCEP](https://viacep.com.br/) e calcula um **frete demonstrativo** pela faixa inicial do CEP. A função SQL recalcula o frete na confirmação. Compras a partir de R$ 399 têm frete grátis. A estimativa de prazo é ilustrativa.
 - **Pagamento:** Pix, boleto e cartão são **simulados**. O site não coleta número, validade nem código de segurança de cartão e não gera cobranças reais.
 - **Pedidos:** a função `place_order` valida usuário, itens, tamanhos e quantidades; lê os preços do banco; calcula o total e cria pedido e itens em uma transação.
-- **Admin:** `/admin` exibe pedidos, valor demonstrativo acumulado, produtos ativos e alertas de estoque. Em **Produtos**, é possível cadastrar/editar itens, enviar fotos, definir preços, tamanhos, destaque e estoque, além de arquivar/reativar. Em **Pedidos**, é possível ver itens e endereço e atualizar o status. Cancelar um pedido devolve as unidades ao estoque; reativá-lo reserva novamente. A autorização é verificada no banco.
+- **Admin:** `/admin` exibe pedidos, valor demonstrativo acumulado, produtos ativos e alertas de estoque. Em **Produtos**, é possível cadastrar/editar/remover itens, enviar fotos, definir preços, tamanhos, destaque e estoque, além de arquivar/reativar. Um produto ligado a pedidos só pode ser arquivado, para preservar o histórico. Em **Pedidos**, é possível ver itens e endereço e atualizar o status. Cancelar um pedido devolve as unidades ao estoque; reativá-lo reserva novamente. Em **Equipe**, administradores podem autorizar outras contas já cadastradas. A autorização é verificada no banco.
 - **Dados:** CPF é validado por dígitos verificadores no formulário e no banco. O React escapa o texto exibido; consultas usam o SDK Supabase, sem SQL concatenado pelo cliente.
 
 ### Organização do código (MVC)
